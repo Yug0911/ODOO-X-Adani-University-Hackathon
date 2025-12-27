@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>New Maintenance Request</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <h2>New Maintenance Request</h2>
+
+    <form id="maintenanceForm">
+
+        <label>Subject</label><br>
+        <input type="text" id="subject" required><br><br>
+
+        <label>Maintenance For</label><br>
+        <select id="maintenanceFor">
+            <option value="Equipment">Equipment</option>
+            <option value="Work Center">Work Center</option>
+        </select><br><br>
+
+        <label>Select Equipment / Work Center</label><br>
+        <select id="selectedId"></select><br><br>
+
+        <label>Maintenance Type</label><br>
+        <select id="requestType">
+            <option value="Corrective">Corrective</option>
+            <option value="Preventive">Preventive</option>
+        </select><br><br>
+
+        <label>Assigned Technician ID</label><br>
+        <input type="number" id="technicianId"><br><br>
+
+        <label>Scheduled Date</label><br>
+        <input type="datetime-local" id="scheduledDate"><br><br>
+
+        <button type="submit">Create Request</button>
+
+    </form>
+
+    <p id="status"></p>
+
+    <script src="js/maintenance.js"></script>
+</body>
+
+</html>
