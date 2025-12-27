@@ -1,16 +1,19 @@
+require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const { Pool } = require('pg');
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 // Database connection
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'maintenance',
-  password: 'DBMS@4250',
-  port: 5432,
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
 });
 
 // ============================================
@@ -77,12 +80,15 @@ app.post('/api/requests', async (req, res) => {
   }
 
   try {
-    // Validate selected_id exists
+    let assigned_team_id = null;
+
+    // Validate selected_id exists and auto-fill assigned_team_id for Equipment
     if (maintenance_for === 'Equipment') {
-      const equipCheck = await pool.query('SELECT id FROM equipment WHERE id = $1 AND is_active = TRUE', [selected_id]);
+      const equipCheck = await pool.query('SELECT id, assigned_team_id FROM equipment WHERE id = $1 AND is_active = TRUE', [selected_id]);
       if (equipCheck.rows.length === 0) {
         return res.status(404).json({ error: 'Equipment not found' });
       }
+      assigned_team_id = equipCheck.rows[0].assigned_team_id;
     } else {
       const wcCheck = await pool.query('SELECT id FROM work_centers WHERE id = $1', [selected_id]);
       if (wcCheck.rows.length === 0) {
@@ -96,13 +102,13 @@ app.post('/api/requests', async (req, res) => {
 
     const query = `
       INSERT INTO maintenance_requests
-      (subject, maintenance_for, equipment_id, work_center_id, request_type, assigned_technician_id, scheduled_date, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 'New Request')
+      (subject, maintenance_for, equipment_id, work_center_id, request_type, assigned_technician_id, assigned_team_id, scheduled_date, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'New Request')
       RETURNING *
     `;
 
     const newReq = await pool.query(query, [
-      subject, maintenance_for, equipment_id, work_center_id, request_type, assigned_technician_id, scheduled_date
+      subject, maintenance_for, equipment_id, work_center_id, request_type, assigned_technician_id, assigned_team_id, scheduled_date
     ]);
 
     res.status(201).json(newReq.rows[0]);
@@ -133,7 +139,40 @@ app.get('/api/kanban', async (req, res) => {
 });
 
 // ============================================
-// 5. EQUIPMENT STATS (Smart Button)
+// 5. STATUS UPDATES (Kanban Drag & Drop)
+// ============================================
+app.patch('/api/requests/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ['New Request', 'In Progress', 'Repaired', 'Scrap'];
+  if (!status || !validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status. Must be one of: ' + validStatuses.join(', ') });
+  }
+
+  try {
+    // Update the request status
+    const updateQuery = 'UPDATE maintenance_requests SET status = $1 WHERE id = $2 RETURNING *';
+    const updateResult = await pool.query(updateQuery, [status, id]);
+
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+
+    // Trigger logic: If status is 'Scrap' and equipment_id is not null, set equipment.is_active = false
+    if (status === 'Scrap' && updateResult.rows[0].equipment_id) {
+      await pool.query('UPDATE equipment SET is_active = false WHERE id = $1', [updateResult.rows[0].equipment_id]);
+    }
+
+    res.json(updateResult.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================
+// 6. EQUIPMENT STATS (Smart Button)
 // ============================================
 app.get('/api/equipment/:id/stats', async (req, res) => {
   const { id } = req.params;
